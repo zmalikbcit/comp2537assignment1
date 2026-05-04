@@ -15,7 +15,11 @@ const saltRounds = 12;
 // Session expiry: 1 hour
 const expireTime = 1 * 60 * 60 * 1000;
 
-// Middleware
+// Required for Render — tells Express it's sitting behind a reverse proxy
+// Without this, secure cookies won't work and sessions won't save
+app.set('trust proxy', 1);
+
+// middler
 app.use(express.urlencoded({ extended: false }));
 
 app.use(
@@ -27,19 +31,22 @@ app.use(
             mongoUrl: `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@${process.env.MONGODB_HOST}/sessions`,
             crypto: { secret: process.env.MONGODB_SESSION_SECRET },
         }),
-        cookie: { maxAge: expireTime },
+        cookie: {
+            maxAge: expireTime,
+            secure: true,    // Render serves over HTTPS so cookies must be secure
+            sameSite: 'none' // needed when secure: true
+        },
     })
 );
 
 app.use(express.static(__dirname + '/public'));
 
-// Helper
+// helper
 function isLoggedIn(req) {
-
     return req.session && req.session.authenticated;
 }
 
-// Home
+// home
 app.get('/', (req, res) => {
     if (!isLoggedIn(req)) {
         res.send(`
@@ -56,7 +63,7 @@ app.get('/', (req, res) => {
     }
 });
 
-// Signup
+// isgnup get
 app.get('/signup', (req, res) => {
     res.send(`
     <h2>create user</h2>
@@ -69,18 +76,9 @@ app.get('/signup', (req, res) => {
   `);
 });
 
-// Sign up submit
+// isgnupSubmit post
 app.post('/signupSubmit', async (req, res) => {
     const { name, email, password } = req.body;
-
-    // Validate with Joi (NoSQL Injection prevention)
-    const schema = Joi.object({
-        name: Joi.string().max(50).required(),
-        email: Joi.string().email().required(),
-        password: Joi.string().max(20).required(),
-    });
-
-    const { error } = schema.validate({ name, email, password });
 
     if (!name) {
         return res.send(`Name is required.<br><a href="/signup">Try again</a>`);
@@ -91,6 +89,15 @@ app.post('/signupSubmit', async (req, res) => {
     if (!password) {
         return res.send(`Password is required.<br><a href="/signup">Try again</a>`);
     }
+
+    // Validate with Joi
+    const schema = Joi.object({
+        name: Joi.string().max(50).required(),
+        email: Joi.string().email().required(),
+        password: Joi.string().max(20).required(),
+    });
+
+    const { error } = schema.validate({ name, email, password });
     if (error) {
         return res.send(`Invalid input.<br><a href="/signup">Try again</a>`);
     }
@@ -113,7 +120,7 @@ app.post('/signupSubmit', async (req, res) => {
     });
 });
 
-// Login
+// login get
 app.get('/login', (req, res) => {
     res.send(`
     <h2>log in</h2>
@@ -125,7 +132,7 @@ app.get('/login', (req, res) => {
   `);
 });
 
-// Log in submit
+// loginSubmit post
 app.post('/loginSubmit', async (req, res) => {
     const { email, password } = req.body;
 
@@ -167,11 +174,10 @@ app.post('/loginSubmit', async (req, res) => {
     });
 });
 
-// Members
+// Member get
 app.get('/members', (req, res) => {
-    if (!req.session.authenticated) {
-        res.redirect('/');
-        return;
+    if (!isLoggedIn(req)) {
+        return res.redirect('/');
     }
 
     const images = ['cat1.jpg', 'cat2.jpg', 'cat3.jpg'];
@@ -184,13 +190,13 @@ app.get('/members', (req, res) => {
   `);
 });
 
-// Logout
+// Logout get
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
 });
 
-// 404 catch all
+// 404 Catch all
 app.get('*', (req, res) => {
     res.status(404).send('Page not found - 404');
 });
