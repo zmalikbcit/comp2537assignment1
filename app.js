@@ -33,12 +33,12 @@ app.use(
 
 app.use(express.static(__dirname + '/public'));
 
-// Helper function to check if user is logged in
+// Helper
 function isLoggedIn(req) {
     return req.session && req.session.authenticated;
 }
 
-// HOME PAGE  /  GET
+// Home
 app.get('/', (req, res) => {
     if (!isLoggedIn(req)) {
         res.send(`
@@ -55,7 +55,7 @@ app.get('/', (req, res) => {
     }
 });
 
-// SIGN UP  /signup  GET
+// Signup
 app.get('/signup', (req, res) => {
     res.send(`
     <h2>create user</h2>
@@ -68,7 +68,7 @@ app.get('/signup', (req, res) => {
   `);
 });
 
-// SIGN UP SUBMIT  /signupSubmit  POST
+// Sign up submit
 app.post('/signupSubmit', async (req, res) => {
     const { name, email, password } = req.body;
 
@@ -104,10 +104,15 @@ app.post('/signupSubmit', async (req, res) => {
     req.session.email = email;
     req.session.cookie.maxAge = expireTime;
 
-    res.redirect('/members');
+    req.session.save((err) => {
+        if (err) {
+            console.error(err);
+        }
+        res.redirect('/members');
+    });
 });
 
-// LOG IN  /login  GET
+// Login
 app.get('/login', (req, res) => {
     res.send(`
     <h2>log in</h2>
@@ -119,7 +124,7 @@ app.get('/login', (req, res) => {
   `);
 });
 
-// LOG IN SUBMIT  /loginSubmit  POST
+// Log in submit
 app.post('/loginSubmit', async (req, res) => {
     const { email, password } = req.body;
 
@@ -153,10 +158,15 @@ app.post('/loginSubmit', async (req, res) => {
     req.session.email = user.email;
     req.session.cookie.maxAge = expireTime;
 
-    res.redirect('/members');
+    req.session.save((err) => {
+        if (err) {
+            console.error(err);
+        }
+        res.redirect('/members');
+    });
 });
 
-// MEMBERS AREA  /members  GET
+// Members
 app.get('/members', (req, res) => {
     if (!isLoggedIn(req)) {
         return res.redirect('/');
@@ -172,18 +182,18 @@ app.get('/members', (req, res) => {
   `);
 });
 
-// LOG OUT  /logout  GET
+// Logout
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
 });
 
-// 404 handler
+// 404 catch all
 app.get('*', (req, res) => {
     res.status(404).send('Page not found - 404');
 });
 
-// start server
+// Start Server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
