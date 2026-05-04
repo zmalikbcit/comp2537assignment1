@@ -1,5 +1,11 @@
 require('dotenv').config();
 
+// Warn early if critical env vars are missing
+const requiredEnv = ['MONGODB_USER', 'MONGODB_PASSWORD', 'MONGODB_HOST', 'MONGODB_DATABASE', 'NODE_SESSION_SECRET', 'MONGODB_SESSION_SECRET'];
+requiredEnv.forEach((key) => {
+    if (!process.env[key]) console.warn(`WARNING: Missing environment variable: ${key}`);
+});
+
 const express = require('express');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
@@ -16,25 +22,33 @@ const saltRounds = 12;
 const expireTime = 1 * 60 * 60 * 1000;
 
 // Required for Render — tells Express it's sitting behind a reverse proxy
-// Without this, secure cookies won't work and sessions won't save
 app.set('trust proxy', 1);
 
-// middler
+// middleware
 app.use(express.urlencoded({ extended: false }));
+
+// Build MongoStore options — crypto is only added when the secret is a non-empty string.
+// connect-mongo crashes at store creation (not at request time) if crypto.secret is
+// null or undefined, so we must not pass the crypto key at all in that case.
+const mongoStoreOptions = {
+    mongoUrl: `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@${process.env.MONGODB_HOST}/?retryWrites=true`,
+    dbName: 'sessions',
+};
+if (process.env.MONGODB_SESSION_SECRET && process.env.MONGODB_SESSION_SECRET.length > 0) {
+    mongoStoreOptions.crypto = { secret: process.env.MONGODB_SESSION_SECRET };
+}
 
 app.use(
     session({
         secret: process.env.NODE_SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
-        store: MongoStore.create({
-            mongoUrl: `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@${process.env.MONGODB_HOST}/sessions`,
-            crypto: { secret: process.env.MONGODB_SESSION_SECRET },
-        }),
+        store: MongoStore.create(mongoStoreOptions),
         cookie: {
             maxAge: expireTime,
-            secure: true,    // Render serves over HTTPS so cookies must be secure
-            sameSite: 'none' // needed when secure: true
+            // Only use secure/sameSite:none on production (Render sets NODE_ENV=production)
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         },
     })
 );
@@ -63,7 +77,7 @@ app.get('/', (req, res) => {
     }
 });
 
-// isgnup get
+// signup get
 app.get('/signup', (req, res) => {
     res.send(`
     <h2>create user</h2>
@@ -76,7 +90,7 @@ app.get('/signup', (req, res) => {
   `);
 });
 
-// isgnupSubmit post
+// signupSubmit post
 app.post('/signupSubmit', async (req, res) => {
     const { name, email, password } = req.body;
 
@@ -90,7 +104,6 @@ app.post('/signupSubmit', async (req, res) => {
         return res.send(`Password is required.<br><a href="/signup">Try again</a>`);
     }
 
-    // Validate with Joi
     const schema = Joi.object({
         name: Joi.string().max(50).required(),
         email: Joi.string().email().required(),
@@ -114,7 +127,7 @@ app.post('/signupSubmit', async (req, res) => {
 
     req.session.save((err) => {
         if (err) {
-            console.error(err);
+            console.error('Session save error:', err);
         }
         res.redirect('/members');
     });
@@ -136,7 +149,6 @@ app.get('/login', (req, res) => {
 app.post('/loginSubmit', async (req, res) => {
     const { email, password } = req.body;
 
-    // Validate with Joi (NoSQL Injection prevention)
     const schema = Joi.object({
         email: Joi.string().email().required(),
         password: Joi.string().max(20).required(),
@@ -168,13 +180,13 @@ app.post('/loginSubmit', async (req, res) => {
 
     req.session.save((err) => {
         if (err) {
-            console.error(err);
+            console.error('Session save error:', err);
         }
         res.redirect('/members');
     });
 });
 
-// Member get
+// Members get
 app.get('/members', (req, res) => {
     if (!isLoggedIn(req)) {
         return res.redirect('/');
