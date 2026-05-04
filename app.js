@@ -1,11 +1,5 @@
 require('dotenv').config();
 
-// Warn early if critical env vars are missing
-const requiredEnv = ['MONGODB_USER', 'MONGODB_PASSWORD', 'MONGODB_HOST', 'MONGODB_DATABASE', 'NODE_SESSION_SECRET', 'MONGODB_SESSION_SECRET'];
-requiredEnv.forEach((key) => {
-    if (!process.env[key]) console.warn(`WARNING: Missing environment variable: ${key}`);
-});
-
 const express = require('express');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
@@ -21,32 +15,26 @@ const saltRounds = 12;
 // Session expiry: 1 hour
 const expireTime = 1 * 60 * 60 * 1000;
 
-// Required for Render — tells Express it's sitting behind a reverse proxy
+// Required for Render — tells Express it's behind a reverse proxy
 app.set('trust proxy', 1);
 
 // middleware
 app.use(express.urlencoded({ extended: false }));
 
-// Build MongoStore options — crypto is only added when the secret is a non-empty string.
-// connect-mongo crashes at store creation (not at request time) if crypto.secret is
-// null or undefined, so we must not pass the crypto key at all in that case.
-const mongoStoreOptions = {
-    mongoUrl: `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@${process.env.MONGODB_HOST}/?retryWrites=true`,
-    dbName: 'sessions',
-};
-if (process.env.MONGODB_SESSION_SECRET && process.env.MONGODB_SESSION_SECRET.length > 0) {
-    mongoStoreOptions.crypto = { secret: process.env.MONGODB_SESSION_SECRET };
-}
-
+// Use the existing MongoClient from databaseConnection.js as the session store.
+// This avoids connect-mongo opening a second connection and sidesteps all
+// mongoUrl / crypto initialization bugs across different connect-mongo versions.
 app.use(
     session({
         secret: process.env.NODE_SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
-        store: MongoStore.create(mongoStoreOptions),
+        store: MongoStore.create({
+            client: database,
+            dbName: 'sessions',
+        }),
         cookie: {
             maxAge: expireTime,
-            // Only use secure/sameSite:none on production (Render sets NODE_ENV=production)
             secure: process.env.NODE_ENV === 'production',
             sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         },
