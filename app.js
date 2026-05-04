@@ -35,6 +35,7 @@ app.use(express.static(__dirname + '/public'));
 
 // Helper
 function isLoggedIn(req) {
+
     return req.session && req.session.authenticated;
 }
 
@@ -168,8 +169,9 @@ app.post('/loginSubmit', async (req, res) => {
 
 // Members
 app.get('/members', (req, res) => {
-    if (!isLoggedIn(req)) {
-        return res.redirect('/');
+    if (!req.session.authenticated) {
+        res.redirect('/');
+        return;
     }
 
     const images = ['cat1.jpg', 'cat2.jpg', 'cat3.jpg'];
